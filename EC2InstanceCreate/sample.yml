@@ -1,0 +1,43 @@
+---
+- name: 'EC2 Instance create'
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+      - name: create a security group in us-east-2
+        ec2_group:
+          name: dmz
+          description: an example ec2 group
+          region: us-east-2
+          aws_access_key: "AKIA5EVZ32VQIZ4W3HDI"
+          aws_secret_key: "yTCKDP/+G3WEAYPg3kw2EydiLXlUS2C7s/NRKA+w"
+          rules:
+            - proto: tcp
+              from_port: 80
+              to_port: 80
+              cidr_ip: 0.0.0.0/0
+        register: security_group
+      - name: 'debug security_group variable'
+        debug:
+          var: security_group.group_id
+
+      - name: create ec2 instance
+        ec2:
+          aws_access_key: "AKIA5EVZ32VQIZ4W3HDI"
+          aws_secret_key: "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"
+          image: ami-00c03f7f7f2ec15c3
+          wait: yes
+          instance_type: t2.micro
+          group_id: "{{security_group.group_id}}"
+          region: us-east-2
+          count: 1  # default
+         count_tag:
+            Name: Demo
+         instance_tags:
+            Name: Demo
+        register: ec2   
+      - name: 'debug ec2 variable'
+        debug:
+          var: ec2
+   
+        

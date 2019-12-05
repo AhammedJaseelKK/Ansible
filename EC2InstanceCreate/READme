@@ -1,0 +1,4 @@
+* ansible-playbook -i inventory.ini b.yml
+* Note that when launching an EC2 instance with ansible via the ansible ec2 module, the hosts variable should point to localhost and gather_facts should be set to False.
+* Amazon Linux 2 AMI machine
+

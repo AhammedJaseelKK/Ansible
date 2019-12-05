@@ -1,0 +1,37 @@
+---
+- name: 'install nginx'
+  hosts: amazon
+  become: yes
+  vars:
+    domain: example.com
+  tasks:
+    - name: 'nginx Install'
+      apt:
+        name: nginx
+        state: latest
+
+    - name: 'create a root directory'
+      file:
+        path: /var/www/html/{{domain}}
+        state: directory
+
+    - name: 'copy index.html in root directory'
+      copy:
+        content: '<html><h3>Brothers</h3></html>'
+        dest: /var/www/html/{{domain}}/index.html
+
+    - name: 'copy conf files file demo file'
+      template:
+        src: domain.conf.j2
+        dest: /etc/nginx/sites-available/{{domain}}
+
+    - name: 'copy conf files'
+      shell: cp /etc/nginx/sites-available/{{domain}} /etc/nginx/sites-enabled/{{domain}}
+         
+    - name: 'Restart webserver'
+      service: 
+        name: nginx
+        state: restarted    
+
+
+            

@@ -1,0 +1,260 @@
+---
+- name: 'VPC creation'
+  hosts: localhost
+  gather_facts: False
+  become: False
+  vars:
+    aws_access_key: "" #put your aws_access_key here
+    aws_secret_key: "" #put your aws_secret_key here
+    region: "us-east-2"
+    vpc_cidr: 172.16.0.0/16
+    vpc_name: "myVPC"
+
+    public_subnet_name_1: "public_subnet_1"
+    public_subnet_name_2: "public_subnet_2"
+    private_subnet_name_1: "private_subnet_1"
+
+    public_subnet_cidr_1: 172.16.0.0/19
+    public_subnet_cidr_2: 172.16.32.0/19
+    private_subnet_cidr_1: 172.16.64.0/19
+
+    igw_name: "myIGW"
+    securitygroup_name: "Ansible Security Group"
+    public_ec2_tag_1: "WebServer"
+    public_ec2_tag_2: "BastianServer"
+    private_ec2_tag_1: "DatabaseServer"
+    ansible_python_interpreter: ~/venv/bin/python3
+    ec2_key_directory: "/home/ec2-user/"
+    keypair_name: "pemkey-ansible"
+    ami_ID: "ami-00bf61217e296b409"
+
+  tasks:
+  - name: create VPC
+    ec2_vpc_net:
+      name: "{{ vpc_name }}"
+      cidr_block: "{{ vpc_cidr }}"
+      region: "{{ region }}"
+      state: present
+      aws_access_key: "{{ aws_access_key }}"
+      aws_secret_key: "{{ aws_secret_key }}"
+    register: vpc
+
+  - name: associate public subnet 1 to the VPC
+    ec2_vpc_subnet:
+      state: present
+      vpc_id: "{{ vpc.vpc.id }}"
+      region: "{{ region }}"
+      cidr: "{{ public_subnet_cidr_1 }}"
+      az: us-east-2a
+      aws_access_key: "{{ aws_access_key }}"
+      aws_secret_key: "{{ aws_secret_key }}"
+      map_public: yes
+      resource_tags:
+        Name: "{{ public_subnet_name_1 }}"
+    register: public_subnet_1
+
+  - name: associate public subnet 2 to the VPC
+    ec2_vpc_subnet:
+      state: present
+      vpc_id: "{{ vpc.vpc.id }}"
+      region: "{{ region }}"
+      cidr: "{{ public_subnet_cidr_2 }}"
+      az: us-east-2b
+      aws_access_key: "{{ aws_access_key }}"
+      aws_secret_key: "{{ aws_secret_key }}"
+      map_public: yes
+      resource_tags:
+        Name: "{{ public_subnet_name_2 }}"
+    register: public_subnet_2
+
+  - name: associate private subnet 1 to the VPC
+    ec2_vpc_subnet:
+      state: present
+      vpc_id: "{{ vpc.vpc.id }}"
+      region: "{{ region }}"
+      cidr: "{{ private_subnet_cidr_1 }}"
+      az: us-east-2c
+      aws_access_key: "{{ aws_access_key }}"
+      aws_secret_key: "{{ aws_secret_key }}"
+      map_public: no
+      resource_tags:
+        Name: "{{ private_subnet_name_1 }}"
+    register: private_subnet_1
+
+
+  - name: create IGW
+    ec2_vpc_igw:
+      vpc_id: "{{ vpc.vpc.id }}"
+      region: "{{ region }}"
+      aws_access_key: "{{ aws_access_key }}"
+      aws_secret_key: "{{ aws_secret_key }}"
+      state: "present"
+      tags:
+        Name: "{{ igw_name }}"
+    register: igw  
+
+  - name: allocate a new elastic IP without associating it to anything
+    ec2_eip:
+      aws_access_key: "{{ aws_access_key }}"
+      aws_secret_key: "{{ aws_secret_key }}"
+      state: present
+      region: "{{region}}"
+      in_vpc: yes
+    register: eip
+
+  - name: Create new nat gateway using an allocation-id.
+    ec2_vpc_nat_gateway:
+      state: present
+      subnet_id: "{{ public_subnet_2.subnet.id }}"
+      allocation_id: "{{ eip.allocation_id }}"
+      region: "{{ region }}"
+      aws_access_key: "{{ aws_access_key }}"
+      aws_secret_key: "{{ aws_secret_key }}"
+    register: new_nat_gateway
+
+  - name: Create Security Group for Bastian Server
+    ec2_group:
+      name: Bastian SG
+      description: Bastian SG Group
+      vpc_id: "{{ vpc.vpc.id }}"
+      region: "{{ region }}"
+      aws_access_key: "{{ aws_access_key }}"
+      aws_secret_key: "{{ aws_secret_key }}"
+      rules:
+        - proto: tcp
+          ports:
+          - 22
+          cidr_ip: 0.0.0.0/0
+    register: bastian_security_group
+
+  - name: Create Security Group for Web Server
+    ec2_group:
+      name: Webserver SG
+      description: Webserver SG Group
+      vpc_id: "{{ vpc.vpc.id }}"
+      region: "{{ region }}"
+      aws_access_key: "{{ aws_access_key }}"
+      aws_secret_key: "{{ aws_secret_key }}"
+      rules:
+        - proto: tcp
+          ports:
+          - 80
+          cidr_ip: 0.0.0.0/0
+        - proto: tcp
+          ports:
+          - 22
+          group_id: "{{ bastian_security_group.group_id }}"
+    register: webserver_security_group
+
+  - name: Create Security Group for Database Server
+    ec2_group:
+      name: Database SG
+      description: Database SG Group
+      vpc_id: "{{ vpc.vpc.id }}"
+      region: "{{ region }}"
+      aws_access_key: "{{ aws_access_key }}"
+      aws_secret_key: "{{ aws_secret_key }}"
+      rules:
+        - proto: tcp
+          ports:
+          - 3306
+          group_id: "{{ webserver_security_group.group_id }}"
+        - proto: tcp
+          ports:
+          - 22
+          group_id: "{{ bastian_security_group.group_id }}"
+    register: database_security_group  
+    
+  - name: Set up public subnet route table
+    ec2_vpc_route_table:
+      vpc_id: "{{ vpc.vpc.id }}"
+      region: "{{ region }}"
+      tags:
+        Name: Public_rtb
+      aws_access_key: "{{ aws_access_key }}"
+      aws_secret_key: "{{ aws_secret_key }}"  
+      subnets:
+        - "{{ public_subnet_1.subnet.id }}"
+        - "{{ public_subnet_2.subnet.id }}"
+      routes:
+        - dest: 0.0.0.0/0
+          gateway_id: "{{ igw.gateway_id }}"
+    register: public_route_table
+  
+  - name: Set up private subnet route table
+    ec2_vpc_route_table:
+      vpc_id: "{{ vpc.vpc.id }}"
+      region: "{{ region }}"
+      tags:
+        Name: Private_rtb
+      aws_access_key: "{{ aws_access_key }}"
+      aws_secret_key: "{{ aws_secret_key }}"  
+      subnets:
+        - "{{ private_subnet_1.subnet.id }}"
+      routes:
+        - dest: 0.0.0.0/0
+          gateway_id: "{{ new_nat_gateway.nat_gateway_id }}"
+    register: private_route_table 
+
+  - name: create a new ec2 key pair
+    ec2_key:
+      aws_access_key: "{{ aws_access_key }}"
+      aws_secret_key: "{{ aws_secret_key }}"
+      name: "{{ keypair_name }}"
+      region: "{{ region }}"
+    register: keypair  
+
+  - name: Copy EC2 Private Key locally so it can be later on used to SSH into the instance
+    copy: content="{{ keypair.key.private_key }}" dest={{ ec2_key_directory }}key.ppk
+    when: keypair.changed == true 
+  
+  - name: Create a Web server
+    ec2:
+      image: "{{ ami_ID }}"
+      wait: yes
+      instance_type: t2.micro
+      region: "{{ region }}"
+      group_id: "{{ webserver_security_group.group_id }}"
+      vpc_subnet_id: "{{ public_subnet_1.subnet.id }}"
+      key_name: "{{ keypair.key.name  }}"
+      count_tag:
+        Name: WebServer 
+      instance_tags:
+        Name: WebServer   
+      exact_count: 1
+      aws_access_key: "{{ aws_access_key }}"
+      aws_secret_key: "{{ aws_secret_key }}"
+
+  - name: Create a Bastion server
+    ec2:
+      image: "{{ ami_ID }}"
+      wait: yes
+      instance_type: t2.micro
+      region: "{{ region }}"
+      group_id: "{{ bastian_security_group.group_id }}"
+      vpc_subnet_id: "{{ public_subnet_2.subnet.id }}"
+      key_name: "{{ keypair.key.name  }}"
+      count_tag:
+        Name: BastianServer
+      instance_tags:
+        Name: BastianServer
+      exact_count: 1
+      aws_access_key: "{{ aws_access_key }}"
+      aws_secret_key: "{{ aws_secret_key }}"
+
+  - name: Create a Database server
+    ec2:
+      image: "{{ ami_ID }}"
+      wait: yes
+      instance_type: t2.micro
+      region: "{{ region }}"
+      group_id: "{{ database_security_group.group_id }}"
+      vpc_subnet_id: "{{ private_subnet_1.subnet.id }}"
+      key_name: "{{ keypair.key.name  }}"
+      count_tag:
+        Name: DatabaseServer
+      instance_tags:
+        Name: DatabaseServer
+      exact_count: 1
+      aws_access_key: "{{ aws_access_key }}"
+      aws_secret_key: "{{ aws_secret_key }}"

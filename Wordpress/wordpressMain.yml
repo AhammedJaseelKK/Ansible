@@ -1,0 +1,112 @@
+
+# ansible amazon -b -m shell -a 'yum remove httpd  php-*  mariadb-* -y ; rm -rf /var/www/html/* /var/lib/mysql/* /etc/httpd/'
+- name: 'Wordpress Install'
+  hosts: amazon
+  become: yes
+  gather_facts: no
+  vars_files: configfiles.yml	
+
+
+
+  tasks:
+    - name: 'Install php apache mariadb'
+      yum: 
+        update_cache: yes
+        state: present
+        name: 
+          - httpd
+          - php
+          - php-mysql
+          - mariadb-server 
+          - MySQL-python
+    - name: 'Restart mariadb'
+      service:
+        name: mariadb
+        state: restarted
+
+    - name: 'Virtualhost config'
+      template:
+        src: virtualhost.j2
+        dest: /etc/httpd/conf.d/{{domain}}.conf
+
+    - name: 'Create a wordpress folder in /var/www/html/'
+      file:
+        path: /var/www/html/wordpress
+        state: directory
+            
+    - name: 'download wordpress'
+      get_url:
+        url: https://wordpress.org/wordpress-4.5.8.tar.gz
+        dest: /home/ec2-user/
+
+    - name: 'Unzip contents'
+      unarchive: 
+        src: wordpress-4.5.8.tar.gz
+        dest: /home/ec2-user
+        remote_src: yes
+
+    - name: 'Copy wp-config'
+      template:
+        src: wp-config.j2
+        dest: wordpress/ 
+
+    - name: 'Copy these contents to documentroot'    
+      shell: 'cp -R wordpress/* /var/www/html/wordpress/'
+    
+    - name: 'Change directory permissions'
+      file: dest=/var/www/html/wordpress/ owner=apache group=apache mode=u=rwX,g=rX,o=rX recurse=yes
+
+
+    #mariadb secure installation
+    
+    - name: 'Change mariadb root password'
+      ignore_errors: yes
+      mysql_user:   
+        login_user: root
+        login_password: ''
+        user: root
+        password: "{{mysql_password}}"
+        host_all: yes
+
+    - name: 'Remove anonymous users'
+      mysql_user:
+        login_user: root
+        login_password: "{{mysql_password}}"
+        user: ''
+        state: absent
+        host_all: yes
+
+    - name: 'Disallow root login remotely'
+      command: >
+        mysql --user=root --password={{mysql_password}} mysql --batch --skip-column-names --execute="DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1')"
+      register: result
+
+
+    - name: 'Removing test db'
+      mysql_db:
+        login_user: root
+        login_password: "{{mysql_password}}"
+        db: test
+        state: absent
+
+    - name: 'Create a wordpress db'
+      mysql_db:
+        login_user: root
+        login_password: "{{mysql_password}}"
+        name: "{{wordpress_db}}"
+        state: present
+
+    - name: 'Create mysql users'
+      mysql_user:   
+        login_user: root
+        login_password: "{{mysql_password}}"
+        name: "{{mysql_user_name}}"
+        password: "{{mysql_user_password}}"
+        priv: "*.*:ALL"
+
+    
+
+    - name: 'Restart httpd'
+      service:
+        name: httpd
+        state: restarted 
