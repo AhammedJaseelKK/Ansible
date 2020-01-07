@@ -1,0 +1,29 @@
+---
+- name: 'Register-Handler Demo'
+  hosts: all
+  gather_facts: yes
+  become: yes
+  tasks:
+    - name: 'Install apache'
+      yum:
+        name: httpd
+        state: present
+      register: apache  
+
+    - name: 'Restart apache'
+      service:
+        name: httpd
+        state: restarted
+      when: apache.changed == true  
+
+    - name: 'Copy contents'
+      copy:
+        content: '<h1>v1</h1>'
+        dest: /var/www/html/index.html    
+      notify: body
+
+  handlers: 
+    - name: 'body'
+      service:
+        name: httpd
+        state: restarted
