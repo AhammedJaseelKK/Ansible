@@ -5,6 +5,10 @@
   vars:
     domain: example.com
   tasks:
+    - name: 'Full update first'
+      apt:
+        update_cache: yes
+
     - name: 'nginx Install'
       apt:
         name: nginx
@@ -27,11 +31,8 @@
 
     - name: 'copy conf files'
       shell: cp /etc/nginx/sites-available/{{domain}} /etc/nginx/sites-enabled/{{domain}}
-         
+
     - name: 'Restart webserver'
-      service: 
+      service:
         name: nginx
-        state: restarted    
-
-
-            
+        state: restarted
