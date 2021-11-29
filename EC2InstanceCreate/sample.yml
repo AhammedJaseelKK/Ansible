@@ -9,8 +9,8 @@
           name: dmz
           description: an example ec2 group
           region: us-east-2
-          aws_access_key: "AKIA5EVZ32VQIZ4W3HDI"
-          aws_secret_key: "yTCKDP/+G3WEAYPg3kw2EydiLXlUS2C7s/NRKA+w"
+          aws_access_key: ""
+          aws_secret_key: ""
           rules:
             - proto: tcp
               from_port: 80
@@ -23,8 +23,8 @@
 
       - name: create ec2 instance
         ec2:
-          aws_access_key: "AKIA5EVZ32VQIZ4W3HDI"
-          aws_secret_key: "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"
+          aws_access_key: ""
+          aws_secret_key: ""
           image: ami-00c03f7f7f2ec15c3
           wait: yes
           instance_type: t2.micro
